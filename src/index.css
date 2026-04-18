@@ -1,8 +1,25 @@
 @import "tailwindcss";
 
+/* 设计令牌：间距与层次由组件组合类完成，此处仅页面与可访问性基底 */
+:root {
+  color-scheme: light;
+}
+
 body {
   margin: 0;
   padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.app-page-bg {
+  min-height: 100vh;
+  background: linear-gradient(
+    165deg,
+    #f8fafc 0%,
+    #ffffff 42%,
+    #f1f5f9 100%
+  );
 }
 
 button {

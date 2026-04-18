@@ -18,8 +18,12 @@ import {
   Rows3,
   Repeat,
 } from "lucide-react";
-import type { MergeConfig, UploadedMarkdownFile } from "./types/markdown";
-import { mergeMarkdownFiles } from "./utils/markdownTools";
+import type {
+  EbookMeta,
+  MergeConfig,
+  UploadedMarkdownFile,
+} from "./types/markdown";
+import { mergeMarkdownFiles } from "./utils/mergeStrategies";
 import { PREVIEW_THEMES, renderMarkdownToHtml } from "./utils/markdownPreview";
 import {
   exportMarkdownFile,
@@ -28,6 +32,13 @@ import {
 } from "./utils/exporters";
 
 const DEFAULT_CONFIG: MergeConfig = {
+  mergeMode: "default",
+  ebook: {
+    bookTitle: "",
+    author: "",
+    showToc: true,
+    tocMaxDepth: 2,
+  },
   showTitleOrder: false,
   titleOrderType: "numeric",
   stripHtml: false,
@@ -36,6 +47,22 @@ const DEFAULT_CONFIG: MergeConfig = {
   replaceFrom: "",
   replaceTo: "",
 };
+
+/** 统一表单控件：对比度、hover、focus-visible（键盘可达） */
+const FIELD_CLASS =
+  "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 shadow-sm outline-none transition-[border-color,box-shadow] placeholder:text-slate-400 hover:border-slate-300 focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50";
+
+const CARD_CLASS =
+  "rounded-2xl border border-slate-200/90 bg-white shadow-sm shadow-slate-900/[0.04]";
+
+const BTN_ICON_CLASS =
+  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35 disabled:pointer-events-none disabled:opacity-40";
+
+const BTN_PRIMARY_CLASS =
+  "inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:brightness-105 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-40";
+
+const SECTION_LABEL_CLASS =
+  "block text-[11px] font-semibold uppercase tracking-wide text-slate-500";
 
 const App = () => {
   // 状态管理
@@ -188,7 +215,10 @@ const App = () => {
     value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
   const findHeadingStartIndex = (content: string, fileName: string): number => {
-    const headingRegex = new RegExp(`^#\\s+.*${escapeRegExp(fileName)}.*$`, "m");
+    const headingRegex = new RegExp(
+      `^#{1,6}\\s+.*${escapeRegExp(fileName)}.*$`,
+      "m",
+    );
     const match = headingRegex.exec(content);
     return match?.index ?? -1;
   };
@@ -236,14 +266,20 @@ const App = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-900 flex flex-col">
+    <div className="app-page-bg p-4 md:p-8 font-sans text-slate-900 flex flex-col">
       <div className="max-w-7xl mx-auto w-full flex-1">
-        <header className="mb-6 text-center shrink-0">
-          <h1 className="text-3xl font-bold text-slate-800 flex items-center justify-center gap-2">
-            <FileText className="text-blue-600" /> Markdown 文件合并工具
+        <header className="mb-8 text-center shrink-0">
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-900 tracking-tight flex flex-wrap items-center justify-center gap-3">
+            <span
+              className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md shadow-blue-600/25"
+              aria-hidden
+            >
+              <FileText className="h-6 w-6" />
+            </span>
+            Markdown 文件合并工具
           </h1>
-          <p className="text-slate-500 mt-2">
-            拖拽多个 MD 文件，自定义格式并一键合并导出
+          <p className="text-slate-600 mt-3 text-base max-w-xl mx-auto leading-relaxed">
+            拖拽多个 Markdown 文件，配置合并方式与过滤规则，一键预览并导出
           </p>
         </header>
 
@@ -251,14 +287,131 @@ const App = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* 左侧栏：配置项与文件列表 */}
           <div className="lg:col-span-4 space-y-6 flex flex-col h-auto">
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 shrink-0">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-slate-700">
-                <Settings2 size={18} className="text-slate-400" /> 合并配置
+            <div className={`${CARD_CLASS} p-5 shrink-0`}>
+              <h2 className="text-lg font-semibold mb-5 flex items-center gap-2 text-slate-800">
+                <Settings2 size={18} className="text-slate-400 shrink-0" aria-hidden />
+                合并配置
               </h2>
               <div className="space-y-4">
-                <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-3">
-                  <p className="text-xs text-slate-500">
-                    标题固定使用一级标题格式：<span className="font-mono"># 文件名</span>
+                <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/80 space-y-3">
+                  <label className={`${SECTION_LABEL_CLASS} mb-1.5`}>
+                    合并模式
+                  </label>
+                  <select
+                    className={FIELD_CLASS}
+                    value={config.mergeMode}
+                    onChange={(e) => {
+                      const nextMode = e.target.value as MergeConfig["mergeMode"];
+                      setManualContent(null);
+                      setConfig({ ...config, mergeMode: nextMode });
+                    }}
+                  >
+                    <option value="default">默认（逐篇合并）</option>
+                    <option value="ebook">电子书</option>
+                  </select>
+                </div>
+
+                {config.mergeMode === "ebook" && (
+                  <div className="p-3 rounded-xl border border-indigo-200 bg-indigo-50/50 space-y-3">
+                    <p className="text-xs font-semibold text-indigo-800">
+                      电子书元信息
+                    </p>
+                    <div>
+                      <label className={`${SECTION_LABEL_CLASS} mb-1.5`}>
+                        书名
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="留空则使用「未命名电子书」"
+                        className={FIELD_CLASS}
+                        value={config.ebook.bookTitle}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            ebook: { ...config.ebook, bookTitle: e.target.value },
+                          })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className={`${SECTION_LABEL_CLASS} mb-1.5`}>
+                        作者
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="选填"
+                        className={FIELD_CLASS}
+                        value={config.ebook.author}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            ebook: { ...config.ebook, author: e.target.value },
+                          })
+                        }
+                      />
+                    </div>
+                    <label className="flex items-center justify-between cursor-pointer group py-1">
+                      <span className="text-xs font-medium text-slate-700">
+                        生成章节目录
+                      </span>
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={config.ebook.showToc}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            ebook: { ...config.ebook, showToc: e.target.checked },
+                          })
+                        }
+                      />
+                      <div className="relative w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div>
+                    </label>
+                    <div>
+                      <label className={`${SECTION_LABEL_CLASS} mb-1.5`}>
+                        目录深度（预留）
+                      </label>
+                      <select
+                        className={FIELD_CLASS}
+                        value={String(config.ebook.tocMaxDepth)}
+                        onChange={(e) =>
+                          setConfig({
+                            ...config,
+                            ebook: {
+                              ...config.ebook,
+                              tocMaxDepth: Number(
+                                e.target.value,
+                              ) as EbookMeta["tocMaxDepth"],
+                            },
+                          })
+                        }
+                      >
+                        <option value="1">H1</option>
+                        <option value="2">H2</option>
+                        <option value="3">H3</option>
+                      </select>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        当前目录仅列出各篇二级标题；深度选项供后续扩展文档内标题目录。
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/80 space-y-3">
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    {config.mergeMode === "default" ? (
+                      <>
+                        每篇使用一级标题：
+                        <span className="font-mono"># 文件名</span>
+                      </>
+                    ) : (
+                      <>
+                        顶部书名使用
+                        <span className="font-mono"> # 书名</span>
+                        ，每篇使用
+                        <span className="font-mono"> ## 章节标题</span>
+                      </>
+                    )}
                   </p>
                   <label className="flex items-center justify-between cursor-pointer group py-1">
                     <span className="text-xs font-medium text-slate-700">
@@ -275,12 +428,12 @@ const App = () => {
                     <div className="relative w-8 h-4 bg-slate-200 rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div>
                   </label>
                   <div>
-                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    <label className={`${SECTION_LABEL_CLASS} mb-1.5`}>
                       序号类型
                     </label>
                     <select
                       disabled={!config.showTitleOrder}
-                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all disabled:opacity-50"
+                      className={FIELD_CLASS}
                       value={config.titleOrderType}
                       onChange={(e) =>
                         setConfig({
@@ -297,37 +450,40 @@ const App = () => {
                 </div>
 
                 <div className="pt-3 border-t border-slate-100">
-                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase mb-2">
-                    <Repeat size={14} /> 全局替换 (支持正则)
-                  </label>
+                  <span className={`${SECTION_LABEL_CLASS} mb-2 flex items-center gap-2`}>
+                    <Repeat size={14} className="text-slate-400" aria-hidden />
+                    全局替换（支持正则）
+                  </span>
                   <div className="grid grid-cols-[1fr_auto_1fr_auto] gap-2 items-center">
                     <input
                       type="text"
                       placeholder="查找..."
-                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+                      className={FIELD_CLASS}
                       value={replaceFromInput}
                       onChange={(e) => setReplaceFromInput(e.target.value)}
                     />
                     <button
+                      type="button"
                       onClick={handleSwapReplaceInputs}
-                      className="h-8 w-8 border border-slate-200 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors flex items-center justify-center"
+                      className={BTN_ICON_CLASS}
                       title="对换查找和替换输入"
                     >
-                      <ArrowLeftRight size={14} />
+                      <ArrowLeftRight size={14} aria-hidden />
                     </button>
                     <input
                       type="text"
                       placeholder="替换为..."
-                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
+                      className={FIELD_CLASS}
                       value={replaceToInput}
                       onChange={(e) => setReplaceToInput(e.target.value)}
                     />
                     <button
+                      type="button"
                       onClick={handleApplyReplace}
-                      className="h-8 px-3 border border-blue-200 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors whitespace-nowrap"
+                      className={`${BTN_PRIMARY_CLASS} h-8 shrink-0 px-3 text-xs bg-blue-600 focus-visible:ring-blue-600 whitespace-nowrap`}
                       title="点击后才应用全局替换"
                     >
-                      替换
+                      应用
                     </button>
                   </div>
                 </div>
@@ -424,8 +580,8 @@ const App = () => {
                   setIsDragging(false);
                   handleFiles(e.dataTransfer.files);
                 }}
-                className={`cursor-pointer border-2 border-dashed rounded-2xl p-6 transition-all flex flex-col items-center justify-center text-center
-                  ${isDragging ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-white hover:border-blue-400 hover:bg-slate-50"}`}
+                className={`cursor-pointer border-2 border-dashed rounded-2xl p-6 transition-[border-color,background-color,box-shadow] flex flex-col items-center justify-center text-center focus-within:ring-2 focus-within:ring-blue-500/25 focus-within:border-blue-400
+                  ${isDragging ? "border-blue-500 bg-blue-50/90 shadow-inner" : "border-slate-300 bg-white hover:border-blue-400 hover:bg-slate-50/90"}`}
               >
                 <input
                   type="file"
@@ -450,14 +606,15 @@ const App = () => {
               </div>
 
               {files.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                  <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center sticky top-0 z-10 shrink-0">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                      文件列表 ({files.length})
+                <div className={`${CARD_CLASS} flex flex-col overflow-hidden`}>
+                  <div className="p-3 border-b border-slate-100 bg-slate-50/60 flex justify-between items-center sticky top-0 z-10 shrink-0">
+                    <span className={`${SECTION_LABEL_CLASS} normal-case tracking-normal text-slate-600`}>
+                      文件列表（{files.length}）
                     </span>
                     <button
+                      type="button"
                       onClick={() => setFiles([])}
-                      className="text-[10px] text-red-500 font-bold uppercase hover:bg-red-50 px-2 py-1 rounded transition-colors"
+                      className="text-xs font-semibold text-red-600 hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30"
                     >
                       清空
                     </button>
@@ -470,35 +627,43 @@ const App = () => {
                       >
                         <div className="flex flex-col text-slate-300">
                           <button
+                            type="button"
                             onClick={() => moveFile(index, -1)}
                             disabled={index === 0}
-                            className="hover:text-blue-500 disabled:opacity-0 transition-opacity"
+                            className="rounded-md p-0.5 text-slate-400 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35 disabled:pointer-events-none disabled:opacity-0 transition-colors"
+                            aria-label="上移"
                           >
-                            <ArrowUp size={12} />
+                            <ArrowUp size={12} aria-hidden />
                           </button>
                           <button
+                            type="button"
                             onClick={() => moveFile(index, 1)}
                             disabled={index === files.length - 1}
-                            className="hover:text-blue-500 disabled:opacity-0 transition-opacity"
+                            className="rounded-md p-0.5 text-slate-400 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35 disabled:pointer-events-none disabled:opacity-0 transition-colors"
+                            aria-label="下移"
                           >
-                            <ArrowDown size={12} />
+                            <ArrowDown size={12} aria-hidden />
                           </button>
                         </div>
                         <p className="flex-1 text-xs text-slate-700 truncate font-medium">
                           {file.name}
                         </p>
                         <button
+                          type="button"
                           onClick={() => handleLocateArticle(file.name)}
-                          className="text-slate-300 hover:text-blue-500 p-1 transition-colors"
+                          className="rounded-lg p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35"
                           title="定位到右侧对应文章"
+                          aria-label={`定位 ${file.name}`}
                         >
-                          <LocateFixed size={14} />
+                          <LocateFixed size={14} aria-hidden />
                         </button>
                         <button
+                          type="button"
                           onClick={() => removeFile(file.id)}
-                          className="text-slate-300 hover:text-red-500 p-1 transition-colors"
+                          className="rounded-lg p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30"
+                          aria-label={`移除 ${file.name}`}
                         >
-                          <Trash2 size={14} />
+                          <Trash2 size={14} aria-hidden />
                         </button>
                       </div>
                     ))}
@@ -510,65 +675,93 @@ const App = () => {
 
           {/* 右侧合并预览：高度固定为 calc(100vh - 300px) */}
           <div className="lg:col-span-8 flex flex-col h-full">
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
-              <div className="p-4 border-b border-slate-100 bg-white flex flex-wrap gap-3 justify-between items-center shrink-0">
-                <h2 className="text-lg font-semibold flex items-center gap-2 text-slate-700">
-                  <Eye size={18} className="text-slate-400" /> 合并预览 (源码)
+            <div className={`${CARD_CLASS} flex flex-col h-full overflow-hidden`}>
+              <div className="p-4 border-b border-slate-100 bg-slate-50/40 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between shrink-0">
+                <h2 className="text-lg font-semibold flex items-center gap-2.5 text-slate-800">
+                  {viewMode === "source" ? (
+                    <Code2 size={18} className="text-blue-600 shrink-0" aria-hidden />
+                  ) : (
+                    <Eye size={18} className="text-blue-600 shrink-0" aria-hidden />
+                  )}
+                  {viewMode === "source" ? "合并结果 · 源码" : "合并结果 · 预览"}
                 </h2>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={handleCopyMergedContent}
-                    disabled={files.length === 0}
-                    className="h-9 w-9 border border-slate-200 hover:bg-slate-50 disabled:opacity-50 text-slate-700 rounded-lg transition-all active:scale-95 cursor-pointer flex items-center justify-center"
-                    title={isCopied ? "已复制" : "复制合成结果"}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap sm:gap-3">
+                  <div
+                    className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/90 bg-white p-1 shadow-sm shadow-slate-900/3"
+                    role="group"
+                    aria-label="编辑与视图"
                   >
-                    <Copy size={16} />
-                  </button>
-                  <button
-                    onClick={handleResetToGenerated}
-                    disabled={files.length === 0}
-                    className="h-9 w-9 border border-slate-200 hover:bg-slate-50 disabled:opacity-50 text-slate-700 rounded-lg transition-all active:scale-95 cursor-pointer flex items-center justify-center"
-                    title="用最新合并结果覆盖编辑内容"
+                    <button
+                      type="button"
+                      onClick={handleCopyMergedContent}
+                      disabled={files.length === 0}
+                      className={BTN_ICON_CLASS}
+                      title={isCopied ? "已复制" : "复制合并结果"}
+                    >
+                      <Copy size={16} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetToGenerated}
+                      disabled={files.length === 0}
+                      className={BTN_ICON_CLASS}
+                      title="用最新合并结果覆盖编辑内容"
+                    >
+                      <RotateCcw size={16} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setViewMode((current) =>
+                          current === "source" ? "preview" : "source",
+                        )
+                      }
+                      disabled={files.length === 0}
+                      className="inline-flex h-9 items-center gap-2 rounded-xl border border-transparent px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35 disabled:pointer-events-none disabled:opacity-40"
+                    >
+                      {viewMode === "source" ? (
+                        <Eye size={16} aria-hidden />
+                      ) : (
+                        <Code2 size={16} aria-hidden />
+                      )}
+                      {viewMode === "source" ? "预览" : "源码"}
+                    </button>
+                  </div>
+                  <div
+                    className="hidden sm:block h-9 w-px shrink-0 bg-slate-200"
+                    role="separator"
+                    aria-hidden
+                  />
+                  <div
+                    className="flex flex-wrap gap-2"
+                    role="group"
+                    aria-label="导出"
                   >
-                    <RotateCcw size={16} />
-                  </button>
-                  <button
-                    onClick={() =>
-                      setViewMode((current) =>
-                        current === "source" ? "preview" : "source",
-                      )
-                    }
-                    disabled={files.length === 0}
-                    className="border border-slate-200 hover:bg-slate-50 disabled:opacity-50 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
-                  >
-                    {viewMode === "source" ? (
-                      <Eye size={16} />
-                    ) : (
-                      <Code2 size={16} />
-                    )}
-                    {viewMode === "source" ? "切换预览模式" : "切换源码模式"}
-                  </button>
-                  <button
-                    onClick={handleExportMarkdown}
-                    disabled={files.length === 0}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
-                  >
-                    <Download size={16} /> 导出 Markdown
-                  </button>
-                  <button
-                    onClick={handleExportPdf}
-                    disabled={files.length === 0}
-                    className="bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
-                  >
-                    <Download size={16} /> 导出 PDF
-                  </button>
-                  <button
-                    onClick={handleExportWord}
-                    disabled={files.length === 0}
-                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
-                  >
-                    <Download size={16} /> 导出 Word
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleExportMarkdown}
+                      disabled={files.length === 0}
+                      className={`${BTN_PRIMARY_CLASS} bg-blue-600 focus-visible:ring-blue-600`}
+                    >
+                      <Download size={16} aria-hidden /> Markdown
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportPdf}
+                      disabled={files.length === 0}
+                      className={`${BTN_PRIMARY_CLASS} bg-violet-600 focus-visible:ring-violet-600`}
+                    >
+                      <Download size={16} aria-hidden /> PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportWord}
+                      disabled={files.length === 0}
+                      className={`${BTN_PRIMARY_CLASS} bg-emerald-600 focus-visible:ring-emerald-600`}
+                    >
+                      <Download size={16} aria-hidden /> Word
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -588,37 +781,49 @@ const App = () => {
                       setIsDragging(false);
                       handleFiles(e.dataTransfer.files);
                     }}
-                    className={`h-full flex flex-col items-center justify-center text-slate-500 space-y-4 italic border-2 border-dashed rounded-2xl transition-all ${
+                    className={`min-h-[280px] flex flex-col items-center justify-center text-center px-6 py-10 space-y-3 border-2 border-dashed rounded-2xl transition-[border-color,background-color,box-shadow,color] ${
                       isDragging
-                        ? "border-blue-500 bg-blue-50/70 text-blue-600"
-                        : "border-slate-300/60 bg-slate-800/20 opacity-60"
+                        ? "border-blue-400 bg-slate-800/60 text-blue-200 shadow-[0_0_0_3px_rgba(59,130,246,0.25)]"
+                        : "border-slate-600/80 bg-slate-800/30 text-slate-400"
                     }`}
                   >
-                    <FileText size={64} />
-                    <p className="text-lg font-medium">
-                      左侧可上传，也可直接拖拽文件到此处
+                    <FileText
+                      size={56}
+                      className={isDragging ? "text-blue-300" : "text-slate-500"}
+                      aria-hidden
+                    />
+                    <p className="text-lg font-semibold text-slate-200 max-w-md leading-snug">
+                      将 Markdown 文件拖到此处，或使用左栏上传
                     </p>
-                    <p className="text-sm">支持 .md / .markdown 文件</p>
+                    <p className="text-sm text-slate-500 max-w-sm leading-relaxed">
+                      支持 .md / .markdown；合并结果会出现在下方编辑区
+                    </p>
                   </div>
                 ) : viewMode === "source" ? (
                   <textarea
                     ref={sourceTextareaRef}
                     value={effectiveContent}
                     onChange={(e) => setManualContent(e.target.value)}
-                    className="w-full h-full resize-none rounded-xl border border-slate-700 bg-slate-950/80 p-4 text-slate-200 font-mono text-sm leading-relaxed outline-none focus:ring-2 focus:ring-blue-500/50"
+                    className="w-full h-full min-h-[240px] resize-y rounded-xl border border-slate-700 bg-slate-950/85 p-4 text-slate-200 font-mono text-sm leading-relaxed outline-none transition-shadow focus-visible:border-blue-500/60 focus-visible:ring-2 focus-visible:ring-blue-500/35"
                     placeholder="合并结果会显示在这里，你可以继续手动修改..."
                   />
                 ) : (
                   <div className="h-full flex flex-col gap-4">
-                    <div className="flex flex-wrap gap-2">
+                    <div
+                      className="flex flex-wrap gap-2"
+                      role="tablist"
+                      aria-label="预览主题"
+                    >
                       {PREVIEW_THEMES.map((theme) => (
                         <button
                           key={theme.id}
+                          type="button"
                           onClick={() => setSelectedThemeId(theme.id)}
-                          className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+                          aria-pressed={selectedThemeId === theme.id}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 focus-visible:ring-blue-400/80 ${
                             selectedThemeId === theme.id
-                              ? "bg-blue-600 text-white border-blue-600"
-                              : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                              ? "bg-blue-600 text-white border-blue-500 shadow-sm"
+                              : "bg-slate-800 text-slate-300 border-slate-600 hover:bg-slate-700/80 hover:border-slate-500"
                           }`}
                         >
                           {theme.label}

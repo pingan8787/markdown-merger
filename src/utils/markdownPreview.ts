@@ -1,4 +1,6 @@
 import MarkdownIt from "markdown-it";
+import markdownItAnchor from "markdown-it-anchor";
+import { slugifyHeadingText } from "./headingSlug";
 
 export type PreviewTheme = {
   id: string;
@@ -13,6 +15,9 @@ const markdownIt = new MarkdownIt({
   linkify: true,
   typographer: true,
   breaks: true,
+}).use(markdownItAnchor, {
+  slugify: (s: string) => slugifyHeadingText(s),
+  permalink: false,
 });
 
 export const renderMarkdownToHtml = (content: string): string =>

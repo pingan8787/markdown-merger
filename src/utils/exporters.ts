@@ -175,7 +175,6 @@ export const exportPdfFromHtml = async (
       logging: false,
     });
 
-    const imageData = canvas.toDataURL("image/jpeg", 0.82);
     const pdf = new jsPDF({
       orientation: "p",
       unit: "mm",
@@ -187,28 +186,61 @@ export const exportPdfFromHtml = async (
     const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 10;
     const drawWidth = pageWidth - margin * 2;
+    /** 整页内容在 PDF 中的总高度（mm），与画布等比 */
     const drawHeight = (canvas.height * drawWidth) / canvas.width;
-    const pageContentHeight = pageHeight - margin * 2;
+    /** 单页可用内容区高度（mm） */
+    const pageContentHeightMm = pageHeight - margin * 2;
+    /**
+     * 旧实现：整张长图反复 addImage 并用负 y 偏移分页。毫米与像素换算舍入会累积，
+     * 导致页末与下一页首条带重叠一条线或略被裁切。改为按像素精确裁条再写入每页。
+     */
+    const pxPerMmY = canvas.height / drawHeight;
+    const slicePxIdeal = pageContentHeightMm * pxPerMmY;
 
-    let renderedHeight = 0;
-    let pageIndex = 0;
-    while (renderedHeight < drawHeight) {
-      if (pageIndex > 0) {
+    const sliceCanvas = document.createElement("canvas");
+    const ctx = sliceCanvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("无法创建 Canvas 2D 上下文");
+    }
+
+    let yPx = 0;
+    let isFirstPage = true;
+    while (yPx < canvas.height) {
+      const remainingPx = canvas.height - yPx;
+      const hPx = Math.max(
+        1,
+        remainingPx <= slicePxIdeal + 1
+          ? remainingPx
+          : Math.max(1, Math.floor(slicePxIdeal)),
+      );
+      const actualHPx = Math.min(hPx, remainingPx);
+
+      sliceCanvas.width = canvas.width;
+      sliceCanvas.height = actualHPx;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+      ctx.drawImage(
+        canvas,
+        0,
+        yPx,
+        canvas.width,
+        actualHPx,
+        0,
+        0,
+        canvas.width,
+        actualHPx,
+      );
+
+      const sliceHeightMm = (actualHPx / canvas.height) * drawHeight;
+      const dataUrl = sliceCanvas.toDataURL("image/jpeg", 0.92);
+
+      if (!isFirstPage) {
         pdf.addPage();
       }
-      const offsetY = margin - renderedHeight;
-      pdf.addImage(
-        imageData,
-        "JPEG",
-        margin,
-        offsetY,
-        drawWidth,
-        drawHeight,
-        undefined,
-        "FAST",
-      );
-      renderedHeight += pageContentHeight;
-      pageIndex += 1;
+      isFirstPage = false;
+      pdf.addImage(dataUrl, "JPEG", margin, margin, drawWidth, sliceHeightMm);
+
+      yPx += actualHPx;
     }
 
     pdf.save(filename);
